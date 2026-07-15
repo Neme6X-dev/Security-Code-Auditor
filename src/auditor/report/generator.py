@@ -104,6 +104,9 @@ _SEVERITY_LABELS: dict[Severity, str] = {
 def _format_finding_markdown(index: int, finding: Finding) -> list[str]:
     """Formate un finding unique en lignes Markdown.
 
+    Le titre utilise rule_id (court) plutot que message (long).
+    Le message complet est affiche dans le corps sous "**Description :**".
+
     Args:
         index: Numero d'ordre du finding dans le rapport.
         finding: Finding a formater.
@@ -114,13 +117,22 @@ def _format_finding_markdown(index: int, finding: Finding) -> list[str]:
     lines: list[str] = []
     label = _SEVERITY_LABELS.get(finding.severity, finding.severity.value)
 
-    lines.append(f"### {index}. {finding.message}")
+    rule_short = finding.rule_id.rsplit(".", maxsplit=1)[-1] if finding.rule_id else ""
+    title = rule_short if rule_short else "Finding sans regle identifiee"
+
+    lines.append(f"### {index}. {title}")
     lines.append("")
     lines.append(f"- **Regle :** `{finding.rule_id}`")
     lines.append(f"- **Severite :** {label} (CVSS ~{finding.cvss_estimate:.1f})")
     lines.append(f"- **Fichier :** `{finding.file}:{finding.line}`")
     lines.append(f"- **Source :** {finding.source}")
     lines.append(f"- **Confiance LLM :** {finding.confidence}")
+
+    if finding.message:
+        lines.append("")
+        lines.append("**Description :**")
+        lines.append("")
+        lines.append(finding.message)
 
     if finding.explanation:
         lines.append("")

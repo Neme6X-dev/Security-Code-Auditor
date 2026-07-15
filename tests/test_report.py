@@ -220,28 +220,48 @@ class TestGenerateMarkdownReport:
     def test_finding_sections_present(self) -> None:
         """Verifie que chaque finding a sa section dans le Markdown."""
         findings = [
-            _make_finding(rule_id="strcpy-danger", message="Buffer overflow via strcpy"),
-            _make_finding(rule_id="cmd-inject", message="Command injection via system()"),
+            _make_finding(rule_id="rules.dangerous-strcpy", message="strcpy utilise sans bornage"),
+            _make_finding(rule_id="rules.cmd-inject", message="Command injection via system()"),
         ]
         report = _make_report(findings)
         md = generate_markdown_report(report)
-        assert "### 1. Buffer overflow via strcpy" in md
-        assert "### 2. Command injection via system()" in md
-        assert "`strcpy-danger`" in md
-        assert "`cmd-inject`" in md
+        assert "### 1. dangerous-strcpy" in md
+        assert "### 2. cmd-inject" in md
+        assert "`rules.dangerous-strcpy`" in md
+        assert "`rules.cmd-inject`" in md
+
+    def test_message_in_body_not_title(self) -> None:
+        """Verifie que le message est dans le corps (Description) et pas dans le titre."""
+        findings = [_make_finding(
+            rule_id="rules.dangerous-strcpy",
+            message="strcpy utilise sans bornage de la taille de la source.",
+        )]
+        report = _make_report(findings)
+        md = generate_markdown_report(report)
+        assert "### 1. dangerous-strcpy" in md
+        assert "strcpy utilise sans bornage" not in md.split("### 1.")[1].split("\n")[0]
+        assert "**Description :**" in md
+        assert "strcpy utilise sans bornage de la taille de la source." in md
+
+    def test_empty_rule_id_fallback(self) -> None:
+        """Verifie le fallback quand rule_id est vide."""
+        findings = [_make_finding(rule_id="", message="Some issue")]
+        report = _make_report(findings)
+        md = generate_markdown_report(report)
+        assert "### 1. Finding sans regle identifiee" in md
 
     def test_severity_ordering_in_output(self) -> None:
         """Verifie que les findings sont affiches par severite decroissante."""
         findings = [
-            _make_finding(severity=Severity.LOW, message="Low issue"),
-            _make_finding(severity=Severity.CRITICAL, message="Critical issue"),
-            _make_finding(severity=Severity.MEDIUM, message="Medium issue"),
+            _make_finding(severity=Severity.LOW, rule_id="low-rule", message="Low issue"),
+            _make_finding(severity=Severity.CRITICAL, rule_id="crit-rule", message="Critical issue"),
+            _make_finding(severity=Severity.MEDIUM, rule_id="med-rule", message="Medium issue"),
         ]
         report = _make_report(findings)
         md = generate_markdown_report(report)
-        pos_critical = md.index("Critical issue")
-        pos_medium = md.index("Medium issue")
-        pos_low = md.index("Low issue")
+        pos_critical = md.index("crit-rule")
+        pos_medium = md.index("med-rule")
+        pos_low = md.index("low-rule")
         assert pos_critical < pos_medium < pos_low
 
     def test_code_block_for_patch(self) -> None:
