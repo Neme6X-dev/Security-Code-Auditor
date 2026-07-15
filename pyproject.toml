@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "security-code-auditor"
+version = "0.1.0"
+description = "Outil d'audit automatisé de code source combinant analyse statique et LLM pour détecter les vulnérabilités de sécurité."
+requires-python = ">=3.11"
+dependencies = [
+    "click",
+    "python-dotenv",
+    "google-genai",
+    "pydantic",
+    "rich",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+auditor = "auditor.cli:main"
+security-auditor = "auditor.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/auditor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

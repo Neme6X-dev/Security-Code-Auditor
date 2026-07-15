@@ -1,0 +1,6 @@
+click
+python-dotenv
+google-genai
+pydantic
+rich
+pytest
