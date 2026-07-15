@@ -1,0 +1,120 @@
+rules:
+  # --- Buffer overflows ---
+  - id: dangerous-strcpy
+    pattern: strcpy($DST, $SRC)
+    message: >
+      strcpy utilise sans bornage de la taille de la source. Risque de buffer
+      overflow. Remplacez par strncpy ou strlcpy avec une taille maximale.
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-120: Buffer Copy without Checking Size of Input"
+      category: security
+
+  - id: dangerous-gets
+    pattern: gets(...)
+    message: >
+      La fonction gets() est dangereuse et deemontee. Elle ne verifie jamais la
+      taille du buffer de destination. Utilisez fgets() a la place.
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-120: Buffer Copy without Checking Size of Input"
+      category: security
+
+  - id: dangerous-sprintf
+    pattern: sprintf($DST, ...)
+    message: >
+      sprintf utilise sans bornage de la taille du buffer de destination. Risque
+      de buffer overflow. Utilisez snprintf() avec une taille maximale.
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-120: Buffer Copy without Checking Size of Input"
+      category: security
+
+  - id: dangerous-strcat
+    pattern: strcat($DST, $SRC)
+    message: >
+      strcat utilise sans verification de la capacite restante du buffer.
+      Risque de buffer overflow. Utilisez strncat() ou realloc le buffer.
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-120: Buffer Copy without Checking Size of Input"
+      category: security
+
+  # --- Command injection ---
+  - id: command-injection-system
+    pattern: system($CMD)
+    message: >
+      Appel a system() susceptible de permettre une injection de commande.
+      Validez et assainissez strictement l'entree, ou utilisez execve().
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      category: security
+
+  - id: command-injection-popen
+    pattern: popen($CMD, $MODE)
+    message: >
+      Appel a popen() susceptible de permettre une injection de commande.
+      Validez et assainissez strictement l'entree utilisateur.
+    languages: [c, cpp]
+    severity: ERROR
+    metadata:
+      cwe: "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      category: security
+
+  # --- Memory management ---
+  - id: malloc-without-null-check
+    pattern: |
+      $TYPE *$BUF = ($TYPE *)malloc(...);
+      ...
+    pattern-not: |
+      $TYPE *$BUF = ($TYPE *)malloc(...);
+      if ($BUF == NULL) { ... }
+      ...
+    message: >
+      Retour de malloc() non verifie. Si l'allocation echoue, le pointeur est
+      NULL et les dereferencements suivants provoqueront un crash.
+    languages: [c, cpp]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-252: Unchecked Return Value"
+      category: reliability
+
+  # --- Unchecked return values ---
+  - id: unchecked-fork-return
+    pattern: fork(...)
+    message: >
+      Retour de fork() non verifie. En cas d'echec, fork() retourne -1 et le
+      programme ne devrait pas continuer comme si le processus fils avait ete cree.
+    languages: [c, cpp]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-252: Unchecked Return Value"
+      category: reliability
+
+  - id: unchecked-execve-return
+    pattern: execve(...)
+    message: >
+      Retour de execve() non verifie. Si execve() echoue, le controle revient
+      au programme appelant ; le flux d'execution doit etre gere.
+    languages: [c, cpp]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-252: Unchecked Return Value"
+      category: reliability
+
+  - id: unchecked-dup2-return
+    pattern: dup2(...)
+    message: >
+      Retour de dup2() non verifie. En cas d'echec, le descripteur de fichier
+      n'a pas ete duplique et le comportement du programme est indefini.
+    languages: [c, cpp]
+    severity: WARNING
+    metadata:
+      cwe: "CWE-252: Unchecked Return Value"
+      category: reliability
