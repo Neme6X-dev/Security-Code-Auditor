@@ -1,0 +1,1 @@
+"""Modules d'analyse statique."""
