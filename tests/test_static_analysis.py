@@ -152,15 +152,15 @@ class TestRunCppcheck:
             <error id="bufferAccessOutOfBounds"
                    severity="error"
                    msg="Possible buffer overflow"
-                   verbose="Buffer is accessed out of bounds"
-                   file="src/main.c"
-                   line="42"/>
+                   verbose="Buffer is accessed out of bounds">
+                <location file="src/main.c" line="42" column="1"/>
+            </error>
             <error id="memleak"
                    severity="warning"
                    msg="Memory leak"
-                   verbose="Memory leak: data"
-                   file="src/utils.c"
-                   line="87"/>
+                   verbose="Memory leak: data">
+                <location file="src/utils.c" line="87" column="1"/>
+            </error>
         </results>"""
         findings = _parse_cppcheck_output(xml_output)
         assert len(findings) == 2
@@ -187,9 +187,9 @@ class TestRunCppcheck:
             <error id="uninitvar"
                    severity="error"
                    msg="Uninitialized variable"
-                   verbose="Variable 'x' is uninitialized"
-                   file="test.c"
-                   line="5"/>
+                   verbose="Variable 'x' is uninitialized">
+                <location file="test.c" line="5" column="1"/>
+            </error>
         </results>"""
         mock_result = MagicMock()
         mock_result.stderr = fake_xml
@@ -211,6 +211,79 @@ class TestRunCppcheck:
 
         assert len(findings) == 1
         assert findings[0]["rule_id"] == "uninitvar"
+
+
+class TestCppcheckParsing:
+    """Tests complementaires pour le parsing XML de Cppcheck."""
+
+    def test_information_severity_filtered(self) -> None:
+        """Verifie que les errors severity=information sont ignorees."""
+        xml_output = """<?xml version="1.0" encoding="UTF-8"?>
+        <results>
+            <error id="missingInclude"
+                   severity="information"
+                   msg="Cppcheck cannot find all the header files"
+                   verbose="Cppcheck cannot find all the header files">
+                <location file="" line="0" column="0"/>
+            </error>
+            <error id="memleak"
+                   severity="error"
+                   msg="Memory leak"
+                   verbose="Memory leak: ptr">
+                <location file="src/main.c" line="31" column="1"/>
+            </error>
+        </results>"""
+        findings = _parse_cppcheck_output(xml_output)
+        assert len(findings) == 1
+        assert findings[0]["rule_id"] == "memleak"
+        assert findings[0]["file"] == "src/main.c"
+        assert findings[0]["line"] == 31
+
+    def test_error_without_location_is_skipped(self) -> None:
+        """Verifie qu'un error sans element <location> est ignore."""
+        xml_output = """<?xml version="1.0" encoding="UTF-8"?>
+        <results>
+            <error id="someError"
+                   severity="warning"
+                   msg="Something"
+                   verbose="Something happened"/>
+        </results>"""
+        findings = _parse_cppcheck_output(xml_output)
+        assert len(findings) == 0
+
+    def test_multiple_locations_appended_to_message(self) -> None:
+        """Verifie que les locations supplementaires sont ajoutees au message."""
+        xml_output = """<?xml version="1.0" encoding="UTF-8"?>
+        <results>
+            <error id="memleak"
+                   severity="error"
+                   msg="Memory leak"
+                   verbose="Memory leak: ptr">
+                <location file="src/main.c" line="31" column="1"/>
+                <location file="src/main.c" line="45" column="1"/>
+                <location file="src/main.c" line="60" column="1"/>
+            </error>
+        </results>"""
+        findings = _parse_cppcheck_output(xml_output)
+        assert len(findings) == 1
+        assert findings[0]["file"] == "src/main.c"
+        assert findings[0]["line"] == 31
+        assert "voir aussi ligne 45, ligne 60" in findings[0]["message"]
+
+    def test_location_reads_file_and_line(self) -> None:
+        """Verifie que file/line sont lus depuis <location> et pas depuis <error>."""
+        xml_output = """<?xml version="1.0" encoding="UTF-8"?>
+        <results>
+            <error id="nullPointer"
+                   severity="error"
+                   msg="Null pointer"
+                   verbose="Null pointer dereference">
+                <location file="lib/util.c" line="102" column="5"/>
+            </error>
+        </results>"""
+        findings = _parse_cppcheck_output(xml_output)
+        assert findings[0]["file"] == "lib/util.c"
+        assert findings[0]["line"] == 102
 
 
 class TestNormalizeSeverity:

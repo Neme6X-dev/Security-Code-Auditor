@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 CPPCHECK_TIMEOUT: int = 120
 
@@ -62,7 +65,11 @@ def run_cppcheck(
 
 
 def _parse_cppcheck_output(raw_output: str) -> list[dict[str, object]]:
-    """Parse la sortie XML de Cppcheck en une liste de findings normalises.
+    """Parse la sortie XML v2 de Cppcheck en une liste de findings normalises.
+
+    La sortie XML v2 place file/line dans un element enfant <location>,
+    pas sur <error> lui-meme. Les errors de type "information" sont
+    ignorees (messages meta de Cppcheck, pas des vulnerabilites).
 
     Args:
         raw_output: Sortie XML brute de Cppcheck (envoyee sur stderr).
@@ -78,12 +85,37 @@ def _parse_cppcheck_output(raw_output: str) -> list[dict[str, object]]:
 
     for error_elem in root.iter("error"):
         severity = error_elem.get("severity", "style")
+
+        if severity.lower() == "information":
+            continue
+
+        locations = error_elem.findall("location")
+        if not locations:
+            logger.warning(
+                "Cppcheck : <error id='%s'> sans <location>, ignore.",
+                error_elem.get("id", "unknown"),
+            )
+            continue
+
+        primary = locations[0]
+        file_path = primary.get("file", "")
+        line = int(primary.get("line", 0))
+
+        message = error_elem.get("verbose", error_elem.get("msg", ""))
+
+        if len(locations) > 1:
+            extras = ", ".join(
+                f"ligne {loc.get('line', '?')}"
+                for loc in locations[1:]
+            )
+            message = f"{message} (voir aussi {extras})"
+
         findings.append(
             {
-                "file": error_elem.get("file", ""),
-                "line": int(error_elem.get("line", 0)),
+                "file": file_path,
+                "line": line,
                 "rule_id": error_elem.get("id", ""),
-                "message": error_elem.get("verbose", error_elem.get("msg", "")),
+                "message": message,
                 "severity": _normalize_severity(severity),
             }
         )
