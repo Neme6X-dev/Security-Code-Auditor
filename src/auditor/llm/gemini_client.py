@@ -51,6 +51,39 @@ DEFAULT_ANALYSIS_RESULT: dict[str, object] = {
     "status": "analysis_failed",
 }
 
+_SENSITIVE_KEYWORDS: tuple[str, ...] = ("api_key", "apikey", "api-key", "token", "secret")
+
+
+def build_failure_result(exc: Exception) -> dict[str, object]:
+    """Construit un resultat d'echec incluant le type et message de l'exception.
+
+    Ne jamais inclure de secrets (cle API, tokens) dans le message d'erreur.
+    Si l'exception contient des mots-cles sensibles dans son message, celui-ci
+    est tronque pour eviter toute fuite.
+
+    Args:
+        exc: Exception qui a cause l'echec de l'analyse.
+
+    Returns:
+        Dictionnaire avec status='analysis_failed' et explanation detaillee.
+    """
+    error_type = type(exc).__name__
+    raw_msg = str(exc).strip()
+
+    lower_msg = raw_msg.lower()
+    if any(kw in lower_msg for kw in _SENSITIVE_KEYWORDS):
+        raw_msg = "(message filtre pour eviter l'exposition de secrets)"
+
+    explanation = f"Analyse echouee ({error_type}: {raw_msg})" if raw_msg else f"Analyse echouee ({error_type})"
+
+    return {
+        "explanation": explanation,
+        "severity_cvss_estimate": 0.0,
+        "suggested_patch": "",
+        "confidence": "low",
+        "status": "analysis_failed",
+    }
+
 
 def _parse_retry_delay(exc: Exception) -> int | None:
     """Extrait le delai de retry depuis une erreur API Google Gen AI.
@@ -136,12 +169,14 @@ class GeminiClient:
 
                 return _parse_analysis_response(response.text)
 
-            except json.JSONDecodeError as exc:
+            except (json.JSONDecodeError, ValueError) as exc:
                 last_exception = exc
                 logger.warning(
-                    "Tentative %d/%d : reponse non-JSON, retry...",
+                    "Tentative %d/%d : reponse invalide (%s: %s), retry...",
                     attempt,
                     max_attempts,
+                    type(exc).__name__,
+                    exc,
                 )
 
             except Exception as exc:
@@ -173,7 +208,7 @@ class GeminiClient:
             attempt,
             last_exception,
         )
-        return dict(DEFAULT_ANALYSIS_RESULT)
+        return build_failure_result(last_exception or RuntimeError("Erreur inconnue"))
 
 
 def _parse_analysis_response(raw_text: str) -> dict[str, object]:

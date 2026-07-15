@@ -9,9 +9,9 @@ import pytest
 
 from auditor.config import get_gemini_api_key
 from auditor.llm.gemini_client import (
-    DEFAULT_ANALYSIS_RESULT,
     MAX_RETRIES,
     GeminiClient,
+    build_failure_result,
     _parse_analysis_response,
 )
 from auditor.llm.prompts import build_analysis_prompt
@@ -267,6 +267,40 @@ class TestGeminiClient:
         assert result["confidence"] == "high"
         assert "status" not in result
 
+
+# ---------------------------------------------------------------------------
+# gemini_client.build_failure_result
+# ---------------------------------------------------------------------------
+
+
+class TestBuildFailureResult:
+    """Tests pour la fonction build_failure_result."""
+
+    def test_includes_error_type_and_message(self) -> None:
+        """Verifie que le type et le message de l'erreur sont dans explanation."""
+        result = build_failure_result(ValueError("cles manquantes"))
+        assert "ValueError" in result["explanation"]
+        assert "cles manquantes" in result["explanation"]
+        assert result["status"] == "analysis_failed"
+
+    def test_api_key_filtered_from_explanation(self) -> None:
+        """Verifie que les mots-cles sensibles sont filtres du message."""
+        result = build_failure_result(Exception("Invalid api_key: sk-abc123"))
+        assert "sk-abc123" not in result["explanation"]
+        assert "filtre" in result["explanation"]
+
+    def test_empty_message_uses_type_only(self) -> None:
+        """Verifie qu'un message vide produit un explanation avec le type seul."""
+        result = build_failure_result(RuntimeError())
+        assert "RuntimeError" in result["explanation"]
+
+    def test_standard_fields_present(self) -> None:
+        """Verifie que les champs standard sont toujours presents."""
+        result = build_failure_result(Exception("test"))
+        assert result["severity_cvss_estimate"] == 0.0
+        assert result["suggested_patch"] == ""
+        assert result["confidence"] == "low"
+
     @patch("auditor.llm.gemini_client.genai.Client")
     @patch("auditor.llm.gemini_client.get_gemini_api_key", return_value="fake-key")
     def test_analyze_finding_api_error_returns_failed(
@@ -304,6 +338,65 @@ class TestGeminiClient:
 
         assert result["status"] == "analysis_failed"
         assert mock_client.models.generate_content.call_count == MAX_RETRIES
+
+    @patch("auditor.llm.gemini_client.genai.Client")
+    @patch("auditor.llm.gemini_client.get_gemini_api_key", return_value="fake-key")
+    def test_analyze_finding_value_error_retries_max_times(
+        self,
+        _mock_key: MagicMock,
+        mock_client_cls: MagicMock,
+    ) -> None:
+        """Verifie qu'une ValueError (schema invalide) est reessayee MAX_RETRIES fois."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = json.dumps({"explanation": "ok"})
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        client = GeminiClient()
+        result = client.analyze_finding(SAMPLE_FINDING, SAMPLE_CODE_SNIPPET)
+
+        assert result["status"] == "analysis_failed"
+        assert mock_client.models.generate_content.call_count == MAX_RETRIES
+
+    @patch("auditor.llm.gemini_client.genai.Client")
+    @patch("auditor.llm.gemini_client.get_gemini_api_key", return_value="fake-key")
+    def test_analyze_finding_failure_contains_error_type(
+        self,
+        _mock_key: MagicMock,
+        mock_client_cls: MagicMock,
+    ) -> None:
+        """Verifie que le message d'echec contient le type d'erreur reel."""
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.text = "not json"
+        mock_client.models.generate_content.return_value = mock_response
+        mock_client_cls.return_value = mock_client
+
+        client = GeminiClient()
+        result = client.analyze_finding(SAMPLE_FINDING, SAMPLE_CODE_SNIPPET)
+
+        assert result["status"] == "analysis_failed"
+        assert "JSONDecodeError" in result["explanation"]
+
+    @patch("auditor.llm.gemini_client.genai.Client")
+    @patch("auditor.llm.gemini_client.get_gemini_api_key", return_value="fake-key")
+    def test_analyze_finding_api_error_failure_contains_error_type(
+        self,
+        _mock_key: MagicMock,
+        mock_client_cls: MagicMock,
+    ) -> None:
+        """Verifie que le message d'echec API contient le type d'erreur reel."""
+        mock_client = MagicMock()
+        mock_client.models.generate_content.side_effect = Exception("boom")
+        mock_client_cls.return_value = mock_client
+
+        client = GeminiClient()
+        result = client.analyze_finding(SAMPLE_FINDING, SAMPLE_CODE_SNIPPET)
+
+        assert result["status"] == "analysis_failed"
+        assert "Exception" in result["explanation"]
+        assert "boom" in result["explanation"]
 
     @patch("auditor.llm.gemini_client.genai.Client")
     @patch("auditor.llm.gemini_client.get_gemini_api_key", return_value="fake-key")
@@ -346,4 +439,6 @@ class TestGeminiClient:
         result = client.analyze_finding(SAMPLE_FINDING, SAMPLE_CODE_SNIPPET)
 
         assert result["status"] == "analysis_failed"
+        assert "fake-key" not in result["explanation"]
+        assert "fake-key" not in str(result)
         _mock_key.assert_called_once_with()
